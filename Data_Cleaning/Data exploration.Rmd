@@ -1,0 +1,413 @@
+---
+title: "Data Exploration"
+author: "Kevin Maciver"
+date: "February 11, 2020"
+output: html_document
+---
+
+# EDA and Data Cleaning 
+
+**Reading the dataset**
+```{r}
+data <- read.csv("C:/Users/Dell/Desktop/Ryerson/Capstone/bitstampUSD_1-min_data_2012-01-01_to_2019-08-12.csv")
+```
+
+**Analizing data structure**
+```{r}
+str(data)
+```
+**Summary of dataset**
+```{r}
+summary(data)
+```
+
+Translating posix Timestamp into readable data and timestamp, dropping the unix timestamp, and summarizing again
+```{r}
+data$Time <-  as.POSIXct(data$Timestamp, origin="1970-01-01", tz = "UTC")
+
+data$date <- as.Date(as.POSIXct(data$Timestamp, origin='1970-01-01', tz="UTC"))
+
+data <- data[,-1]
+summary(data[,-1])
+```
+
+So the dataset has a time range from December 31, 2011 to August 12, 2019.
+
+Visualizing the each of the non-date features
+```{r}
+for (feature in c(1:7)){
+  plot(data[,feature], main = names(data)[feature], ylab = "USD", type = "l")
+}
+
+```
+
+```{r}
+for (feature in c(1:7)){
+  boxplot(data[,feature], main = names(data)[feature])
+}
+```
+ 
+```{r}
+for (feature in c(1:7)){
+  cat("Percentage of outliers in",names(data)[feature],round(length(boxplot.stats(data[,feature])$out)/length(data[,feature])*100,2),"%",'\n')
+}
+```
+Although there is a considerable percentage of outliers the summary of the data shows that negative or other inconsistent number are not present. Bitcoin has have a volitile history so outliers are most likely to be present. 
+
+For initial purposes no treatment for outliers will be executed.
+
+```{r}
+for (feature in c(1:7)){
+  hist(data[,feature], main = names(data)[feature], xlab=names(data)[feature])
+}
+```
+
+**Cleaning the Data**
+```{r}
+#install.package("tidyverse")
+library(tidyverse)
+
+missing_records <- data %>% group_by(data$date) %>% summarise(missing_records = sum(is.na(Open))/n())
+summary(missing_records[,2])
+```
+So the missing_records table shows that 50% of the days have at least approximately 22.1% of missing records, and an average of 30.8% of missing records within each day.
+```{r}
+hist(missing_records$missing_records, main = "Distribution of Daily Missing Records", xlab = "Missing records")
+```
+Sparse data within a day won't be usefull for the predicting algorithm. Therefore only the data of the days that have at most the average percentage of the missing records distribution will be used.
+
+```{r}
+# Defining the threshold for the days that will be used in the data set
+threshold = mean(missing_records$missing_records)
+
+# Creating a list of the days that are bellow the threshold
+usable_dates <- missing_records %>% filter(missing_records <= threshold)
+
+usable_dates$`data$date`<- as.factor(usable_dates$`data$date`)
+
+list_usable_dates <- levels(usable_dates$`data$date`)
+
+# Filtering the data for the days that are bellow the threshold
+data_usable_dates <- data %>% filter(as.factor(date) %in% list_usable_dates)
+
+summary(data_usable_dates)
+```
+So now we have the records for the days which missing records were not above the threshold. Still we have 278207 NaN values that need processing. 
+
+So for the records missing we will consider that the values are the same from the previous not NaN record 
+```{r}
+# Building a function to process the NaN values
+
+#    Objective: Fill NaN records with the previous available record 
+#
+#    Inputs:
+#
+#    data: Is the dataframe whose NaN rows need to be processed
+#    
+#    seq_col: Array with the index columns whose NaN values need 
+#              to be processed, e.g, c(1:7) to process data columns 
+#              1 to 7
+#  
+#    Output: Dataframe with NaN records filled.
+
+fill_previous_record <- function(data, seq_col){
+
+      while(sum(is.na(data)!=0)){
+      fill_data <- data[,seq_col] %>% mutate_all(~ lag(.))
+      fill_data[is.na(fill_data)] <- -1
+      fill_data <- is.na(data[,seq_col])*fill_data
+      data[which(fill_data[,1]>0),seq_col] <-as.matrix(fill_data[which(fill_data[,1]>0),])
+      }
+  return(data)
+}
+```
+
+```{r}
+fill_col_index<- c(1:7)
+data_usable_dates <- fill_previous_record(data_usable_dates,fill_col_index)
+```
+
+```{r}
+summary(data_usable_dates)
+```
+
+Allthough All NaN values are filled doesn't mean that all days are complete with 1440 records (24h * 60 min).
+
+```{r}
+uncomplete_days <- data_usable_dates %>% group_by(date) %>% summarise(n=n()) %>% filter(n!=1440)
+uncomplete_days
+```
+So 2019-08-12 is the last day wich justify why it has missing records. 
+
+```{r}
+data_usable_dates %>% group_by(date) %>%filter(date == '2015-01-05' | date == '2015-01-09') %>% summarise(min(Time),max(Time))
+```
+For January 05 and 09, 2015 the number of records is small. As showned above January 05 only recorded records from midnight to 9:12, while Jauary 09 only recorded records from 21:05 to 23:59.
+
+Since the number of missing records is above the threshold this days will not be used.
+
+```{r}
+data_usable_dates <- data_usable_dates %>% filter(!date %in% uncomplete_days$date)
+```
+
+For the purpose of this project two datasets will be used, one having the price fluctuation in minutes for each day, and one with a daily summary of the price fluctuation. 
+
+The later will be used as a boundary for the intraday prediction. 
+
+## Creating the daily summary data
+
+```{r}
+daily_summary <- data_usable_dates %>% group_by(date) %>% summarise(Open= first(Open), High= max(High), Low = min(Low), Close = last(Close), Volume_BTC = sum(Volume_.BTC.), Volume_Currency= sum(Volume_.Currency.), Weighted_Price= mean(Weighted_Price))
+
+summary(daily_summary)
+```
+Although daily summary data hasn't got any NaN values there are still gaps of missing days within the data, since we remove some at the begining and also some of them weren't even recorded. Since daily summary will be used for future prediciton on variability of data, the data must be continuous throughout the time span.
+
+```{r}
+daily_summary_Full_data <- data.frame(date=seq.Date(min(daily_summary$date),max(daily_summary$date),1))
+
+daily_summary_Full_data <- full_join(daily_summary_Full_data,daily_summary, by="date")
+
+summary(daily_summary_Full_data)
+```
+Applying the same steps to process the NaN values as used before to create the data_usable_dates table.
+```{r}
+fill_col_index<- c(2:8)
+daily_summary_Full_data <- fill_previous_record(daily_summary_Full_data,fill_col_index)
+```
+
+```{r}
+summary(daily_summary_Full_data)
+```
+
+**Technical Indicators**
+
+Technical indicators are commonly used in chart technical analysis for stock market forecast. These indicators help identify current trends and trends reversals. Initialy, five technical indicators will be added to the dataset.
+
+
+```{r}
+# Technical Indicators Relative Strength Index (RSI)
+# RSI: indicates the overbought and over sold regions and hence the change in momentum. This oscillates between 0 and 100. Above 70 is marked as oversold region and below 30 is marked to be overbought region. RSI can also be used to see the general trend. (Bhat & Kamath, 2013) 
+# RSI <- 100 - (100/(1+RS)), Where RS= Avg(given periods closses Up)/Avg(Given periods Closses Down)
+# install.packages(TTR) Ref: https://www.rdocumentation.org/packages/TTR/versions/0.23-6
+library(TTR)
+
+daily_summary_Full_data$RSI <- RSI(daily_summary_Full_data$Close)
+
+```
+
+```{r}
+# Technical Indicator Moving average convergence divergence (MACD)
+# MACD: This has two lines namely MACD line and Signal Line, which give us signals of trend changes with cross overs. These two lines also show the movement of Stock with their coming closer to each other(convergence) and departing from each other(divergence).(Bhat & Kamath, 2013)
+# MACDLine <- 12DayEMA - 26 DayEMA | SignalLine = 9DayEMAofMACDLine
+
+daily_summary_Full_data$MACD_sig <- MACD(daily_summary_Full_data$Close, 12, 26, 9, maType="EMA" )[,2]
+
+```
+
+```{r}
+# Technical Indicator Stochastic Oscillator stoch
+# The stochastic oscillator is a momentum indicator that relates the location of each day's close relative to the high/low range over the past n periods.
+# nFastK -> Number of periods for fast %K (i.e. the number of past periods to use). Default 14
+# nFastD -> Number of periods for fast %D (i.e. the number smoothing periods to apply to fast %K).Default 3
+# nSlowD -> Number of periods for slow %D (i.e. the number smoothing periods to apply to fast %D). Default 3
+
+daily_summary_Full_data$slow_stoch <- stoch(daily_summary_Full_data[,c("High","Low","Close")])[,3]
+```
+
+
+
+```{r}
+# Technical Indicator Rate of Change(PRoC)
+# RoC indicator finds percentage difference of a series over two observations. 
+# n -> 1
+
+daily_summary_Full_data$Open_RoC <- ROC(daily_summary_Full_data$Open)
+daily_summary_Full_data$High_RoC <- ROC(daily_summary_Full_data$High)
+daily_summary_Full_data$Low_RoC <- ROC(daily_summary_Full_data$Low)
+daily_summary_Full_data$Close_RoC <- ROC(daily_summary_Full_data$Close)
+daily_summary_Full_data$Weighted_Price_RoC <- ROC(daily_summary_Full_data$Weighted_Price)
+
+```
+
+Since some indicator use past a number of past values, NaN values are now present in the data
+```{r}
+summary(daily_summary_Full_data)
+```
+In order to maintain the data from the intial days with NaN values in the technical indicatorsthe RoC Columns NaN values will be filled with 0, for the other indexes the NaN value will be filled with the first value filled.
+
+```{r}
+daily_summary_Full_data[is.na(daily_summary_Full_data$Open_RoC),c("Open_RoC","High_RoC","Low_RoC","Close_RoC","Weighted_Price_RoC")] <- 0
+summary(daily_summary_Full_data)
+```
+```{r}
+fill_technical_indicators <- function(x){
+  n_NaN <- sum(is.na(x))
+  x[is.na(x)] <- x[n_NaN+1]
+  return(x)
+}
+
+daily_summary_Full_data <- daily_summary_Full_data %>% mutate(RSI = fill_technical_indicators(RSI))
+daily_summary_Full_data <- daily_summary_Full_data %>% mutate(MACD_sig = fill_technical_indicators(MACD_sig))
+daily_summary_Full_data <- daily_summary_Full_data %>% mutate(slow_stoch = fill_technical_indicators(slow_stoch))
+
+
+summary(daily_summary_Full_data)
+```
+**Checking correlation**
+```{r}
+#install.packages("corrplot")
+library(corrplot)
+res <- cor(daily_summary_Full_data[,-1])
+corrplot(res, type = "upper", order = "hclust", tl.col = "black", tl.srt = 45)
+```
+The feature Volume_Currency is defined as the volume * the weighted price this is why is has a strong correlation with the OHLC and Weighted_price attributes. Therefore it can be excluded since it is not bringing new information.
+
+slow_stoch, RSI and MFI are strongly correlated since they all have the ojective of capturing trend changes.
+
+## Creating Day Trade Data
+
+```{r}
+Day_trade_data<- data_usable_dates %>% group_by(date) %>% arrange(date,Time) %>% mutate(
+Open_RoC = ROC(Open),
+High_RoC = ROC(High),
+Low_RoC = ROC(Low),
+Close_RoC = ROC(Close),
+Weighted_Price_RoC = ROC(Weighted_Price)
+)
+```
+
+```{r}
+Day_trade_data<- Day_trade_data %>%  mutate(RSI = RSI(Close), MACD_index = MACD(Close, 12, 26, 9, maType="EMA" )[,2])
+summary(Day_trade_data)
+```
+```{r}
+slow_stoch <- function(x){
+  return(stoch(x)[,3])
+}
+
+
+Day_trade_data <- Day_trade_data %>% mutate(slow_stoch = tibble(High, Low, Close) %>% slow_stoch)
+
+
+summary(Day_trade_data)
+```
+
+Now that the index are inserted for each day it is necessary to process the NaN values. Since this first step contain valuable information it is not wise to eliminate them, although we don't want the NaN index to influence on later prediction. Therefore, for the RoC Columns NaN values will be filled with 0, for the other indexes the NaN value will be filled with the first value of the day
+
+
+```{r}
+Day_trade_data[is.na(Day_trade_data$Open_RoC),c("Open_RoC","High_RoC","Low_RoC","Close_RoC","Weighted_Price_RoC")] <- 0
+summary(Day_trade_data)
+```
+```{r}
+fill_technical_indicators <- function(x){
+  n_NaN <- sum(is.na(x))
+  x[is.na(x)] <- x[n_NaN+1]
+  return(x)
+}
+
+Day_trade_data <- Day_trade_data %>% mutate(RSI = fill_technical_indicators(RSI))
+Day_trade_data <- Day_trade_data %>% mutate(MACD_index = fill_technical_indicators(MACD_index))
+Day_trade_data <- Day_trade_data %>% mutate(slow_stoch = fill_technical_indicators(slow_stoch))
+
+summary(Day_trade_data)
+```
+```{r}
+res <- cor(Day_trade_data[,-c(8,9)])
+corrplot(res, type = "upper", order = "hclust", tl.col = "black", tl.srt = 45)
+```
+
+# AUTOCORRELATION
+
+Although the corrplot above describes some of the correlation whithin features, for time regression analysis the key factor stands on correlation of the past values and the current time period of the label. Since forecasting is the undeline objective, feature selection must take into account how the data of the previous times steps affect the prediction of the current time step.
+
+The initial step then is checking the autocorrelation of the label data within itself.
+
+## Daily Sumary Data Autocorrelation
+
+Printing High Price for the Full daily summary data
+```{r}
+plot(ts(daily_summary_Full_data$High), type='l')
+```
+To calculate the autocorrelation the data must first be stationary.
+
+Testing to log tranformed and apply lagged and iterated differences to stationarize the data
+```{r}
+plot(diff(log(ts(daily_summary_Full_data$High))))
+```
+```{r}
+library(tseries)
+print(tseries::adf.test(diff(log(ts(daily_summary_Full_data$High)))))
+```
+The results of the Augmented Dickey-Fuller test sugest the rejection of the null hypothesis, thus the data can be considered stationary
+
+```{r}
+qqnorm(diff(log(ts(daily_summary_Full_data$High))))
+qqline(diff(log(ts(daily_summary_Full_data$High))))
+```
+```{r}
+hist(diff(log(ts(daily_summary_Full_data$High))), main="Histogram", xlab = NULL)
+```
+The plot bellow show the correlation of the lagged observations and whether or not the correlation is significant. 
+The X axis shows the howmany timesteps the lagged observation is and measures if is significantly correlated with the current time step of the variable
+```{r}
+acf(diff(log(ts(daily_summary_Full_data$High))), lag.max = 50, na.action = na.pass, main="ACF")
+```
+The plot above show  significant lag values at 1,2,3,4,5,21,24 days, for the High price attribute.
+
+**Doing the same for the Low Attribute**  
+```{r}
+qqnorm(diff(log(ts(daily_summary_Full_data$Low))), asp = 1)
+qqline(diff(log(ts(daily_summary_Full_data$Low))), asp=1)
+```
+```{r}
+plot(diff(log(ts(daily_summary_Full_data$Low))), type="l")
+```
+
+```{r}
+acf(diff(log(ts(daily_summary_Full_data$Low))), lag.max = 50, na.action = na.pass)
+```
+The plot above show  significant lag value at 1 days, for the Low price attribute.
+
+
+## Day Trade Data Autocorrelation
+
+The Day Trade data contains the minute to minute data for a total of 1735 days.
+```{r}
+Day_trade_data %>% group_by(date) %>% summarise(n=n()) %>% summarise(number_of_days=n())
+```
+It will be to cumbersome to analyze the autocorrelation of the data for each day. Instead 10 days will be picked and analyzed. 
+
+Picking 10 Days
+```{r}
+sample_days <- sample(levels(as.factor(daily_summary$date)),10)
+```
+
+```{r}
+autocorrelation_analysis <- function(data, sampled_date){
+    day_tested <- data %>% filter(date == sampled_date)
+    day_tested_transformed <- diff(log(ts(day_tested$Weighted_Price)))
+    return(day_tested_transformed)}
+
+visualize_autocorrelation_analysis <- function(data, data_samples){
+    for (i in c(1:length(data_samples))){          
+      par(mfrow=c(2,2))
+      test <- autocorrelation_analysis(data, data_samples[i])
+      qqnorm(test, asp = 1)
+      qqline(test, asp=1)
+      plot(test, type="l")
+      hist(test, main="Histogram")
+      acf(test, lag.max = 30, na.action = na.pass)
+      }
+}
+  
+visualize_autocorrelation_analysis(Day_trade_data, sample_days)
+```
+For all the sampled days the data was able to be stationarized by applying log and diff transformations. Although, the AFC graphs vary in the number significant lagged time steps the furthest lagged value was 25.
+
+```{r}
+write.csv(daily_summary_Full_data, "C:/Users/Dell/Desktop/Ryerson/Capstone/Data Exploration/DSFD.csv")
+write.csv(Day_trade_data, "C:/Users/Dell/Desktop/Ryerson/Capstone/Data Exploration/Day_trade_data.csv")
+```
+
