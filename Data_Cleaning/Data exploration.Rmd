@@ -52,7 +52,7 @@ for (feature in c(1:7)){
   cat("Percentage of outliers in",names(data)[feature],round(length(boxplot.stats(data[,feature])$out)/length(data[,feature])*100,2),"%",'\n')
 }
 ```
-Although there is a considerable percentage of outliers the summary of the data shows that negative or other inconsistent number are not present. Bitcoin has have a volitile history so outliers are most likely to be present. 
+Although boxplots above describe some considerable number of outliers, the summary of the data shows that there are no negative or other inconsistent number present. Bitcoin has had a volatile history so outliers are most likely to be present. 
 
 For initial purposes no treatment for outliers will be executed.
 
@@ -74,7 +74,7 @@ So the missing_records table shows that 50% of the days have at least approximat
 ```{r}
 hist(missing_records$missing_records, main = "Distribution of Daily Missing Records", xlab = "Missing records")
 ```
-Sparse data within a day won't be usefull for the predicting algorithm. Therefore only the data of the days that have at most the average percentage of the missing records distribution will be used.
+Sparse data within a day won't be useful for the predicting algorithm. Therefore, only the data of the days that have at most the average percentage of the missing records distribution will be used.
 
 ```{r}
 # Defining the threshold for the days that will be used in the data set
@@ -161,7 +161,7 @@ daily_summary <- data_usable_dates %>% group_by(date) %>% summarise(Open= first(
 
 summary(daily_summary)
 ```
-Although daily summary data hasn't got any NaN values there are still gaps of missing days within the data, since we remove some at the begining and also some of them weren't even recorded. Since daily summary will be used for future prediciton on variability of data, the data must be continuous throughout the time span.
+Although daily summary data didn’t present any missing records, there were still gaps of missing days within the data. Since daily summary will be used for future prediction on variability of data, the data must be continuous throughout the time span. Therefore, missing dates where filled with prior records following the same procedure used previously.
 
 ```{r}
 daily_summary_Full_data <- data.frame(date=seq.Date(min(daily_summary$date),max(daily_summary$date),1))
@@ -182,7 +182,7 @@ summary(daily_summary_Full_data)
 
 **Technical Indicators**
 
-Technical indicators are commonly used in chart technical analysis for stock market forecast. These indicators help identify current trends and trends reversals. Initialy, five technical indicators will be added to the dataset.
+Technical indicators are commonly used in chart technical analysis for stock market forecast. These indicators help identify current trends and trends reversals. Initially, four technical indicators will be added to the dataset.
 
 
 ```{r}
@@ -234,7 +234,7 @@ Since some indicator use past a number of past values, NaN values are now presen
 ```{r}
 summary(daily_summary_Full_data)
 ```
-In order to maintain the data from the intial days with NaN values in the technical indicatorsthe RoC Columns NaN values will be filled with 0, for the other indexes the NaN value will be filled with the first value filled.
+In order to maintain all records, missing records from the RoC technical indicators were filled with 0. For remaining technical indicators, missing value will be filled with the first value known. 
 
 ```{r}
 daily_summary_Full_data[is.na(daily_summary_Full_data$Open_RoC),c("Open_RoC","High_RoC","Low_RoC","Close_RoC","Weighted_Price_RoC")] <- 0
@@ -261,9 +261,9 @@ library(corrplot)
 res <- cor(daily_summary_Full_data[,-1])
 corrplot(res, type = "upper", order = "hclust", tl.col = "black", tl.srt = 45)
 ```
-The feature Volume_Currency is defined as the volume * the weighted price this is why is has a strong correlation with the OHLC and Weighted_price attributes. Therefore it can be excluded since it is not bringing new information.
+The feature Volume Currency is defined as the Volume x Weighted price, which explain the strong correlation with the OHLC and Weighted price attributes. 
 
-slow_stoch, RSI and MFI are strongly correlated since they all have the ojective of capturing trend changes.
+Slow Stoch, RSI and MACD are strongly correlated since they all have the objective of capturing trend changes.
 
 ## Creating Day Trade Data
 
@@ -320,7 +320,7 @@ corrplot(res, type = "upper", order = "hclust", tl.col = "black", tl.srt = 45)
 
 # AUTOCORRELATION
 
-Although the corrplot above describes some of the correlation whithin features, for time regression analysis the key factor stands on correlation of the past values and the current time period of the label. Since forecasting is the undeline objective, feature selection must take into account how the data of the previous times steps affect the prediction of the current time step.
+Although the correlation plot above describes some correlation within features, for time regression analysis the key factor stands on correlation of the past values and the current time period of the label. Since forecasting is the underline objective, feature selection must take into account how the data of the previous times steps affect the prediction of the current time step.
 
 The initial step then is checking the autocorrelation of the label data within itself.
 
@@ -340,7 +340,7 @@ plot(diff(log(ts(daily_summary_Full_data$High))))
 library(tseries)
 print(tseries::adf.test(diff(log(ts(daily_summary_Full_data$High)))))
 ```
-The results of the Augmented Dickey-Fuller test sugest the rejection of the null hypothesis, thus the data can be considered stationary
+The results of the Augmented Dickey-Fuller indicates the rejection of the null hypothesis, thus the data can be considered stationary
 
 ```{r}
 qqnorm(diff(log(ts(daily_summary_Full_data$High))))
@@ -404,7 +404,7 @@ visualize_autocorrelation_analysis <- function(data, data_samples){
   
 visualize_autocorrelation_analysis(Day_trade_data, sample_days)
 ```
-For all the sampled days the data was able to be stationarized by applying log and diff transformations. Although, the AFC graphs vary in the number significant lagged time steps the furthest lagged value was 25.
+For all the sampled days the data stationarity was achieved by applying log and diff transformations.  Although, the AFC graphs vary in the number significant lagged time steps, it appears the furthest significant lagged value was t-25. 
 
 ```{r}
 write.csv(daily_summary_Full_data, "C:/Users/Dell/Desktop/Ryerson/Capstone/Data Exploration/DSFD.csv")
