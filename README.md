@@ -18,7 +18,9 @@ This repository has the following directories:
 
 **Feature_Selection** -> Contains the Jupyter Notebook file for feature selection analysis
 
-**Approach**-> Contains the different Jypiter Noebooks used for training different approaches for the problem
+**Approach**-> Contains the different Jupyter Noebooks used for training different approaches for the problem
+
+**FinalModel** -> Contains the final Jupyter Notebooks and training iterations for the Neural Models
 
 **Report** -> Contain Word documents with the on-going report of the work
 
