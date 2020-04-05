@@ -1,0 +1,46 @@
+---
+title: "Evaluate Model"
+author: "Kevin Maciver"
+date: "April 4, 2020"
+output: html_document
+---
+
+Loading model results
+```{r}
+MSE <- c(1166070,141124,1031030, 1129616, 45954038, 21263071, 42696898, 510647, 9094522, 49279)
+MAE <- c( 903, 267, 879, 929,6254, 4185, 5999, 547, 2751, 146)
+
+DayTrade <- data.frame(MSE, MAE)
+```
+
+```{r}
+MSE <- c( 204435,  4465942, 40438318, 9558674, 1909904, 36706335, 8077429, 1226182, 1965074, 97924)
+MAE <- c( 314,  1961, 5730, 2839, 1071, 5397, 2322, 776, 1056, 242)
+
+DayTradeWithDailyInput <- data.frame(MSE, MAE)
+```
+
+```{r}
+boxplot(DayTrade$MSE, at=1, xlim=c(0, 3), 
+        xlab="Step 2 x Step 4 Neural Network",
+        ylab="Mean Squared Error",
+        col="gray",
+        main="MSE results boxplots for each Model ")
+boxplot(DayTradeWithDailyInput$MSE, at=2, add=TRUE, 
+        xlab="Step 2 x Step 4 Neural Network",
+        ylab="Mean Squared Error",
+        col="gray")
+
+```
+```{r}
+boxplot(DayTrade$MAE, at=1, xlim=c(0, 3), 
+        xlab="Step 2 x Step 4 Neural Network",
+        ylab="Mean Absolute Error",
+        col="gray",
+        main="MAE results boxplots for each Model ")
+boxplot(DayTradeWithDailyInput$MAE, at=2, add=TRUE, 
+        xlab="Step 2 x Step 4 Neural Network",
+        ylab="Mean Absolute Error",
+        col="gray")
+```
+
